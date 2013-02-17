@@ -4,6 +4,8 @@ use 5.008_001;
 use strict;
 use warnings;
 
+use JSON::Patch::Context;
+use JSON::Patch::Exception qw(:codes);
 use Module::Load;
 use Module::Loaded;
 
@@ -40,38 +42,80 @@ sub new {
     my $class = shift;
     my $args = ref $_[0] ? $_[0] : { @_ };
     %$args = (
-        extra_operators => [qw//],
+        extra_operators => [],
+        operations      => [],
         %$args,
-        operators => {},
+        op              => {},
     );
 
     $class->load_operators($args->{extra_operators});
-    %{$args->{operators}} = (
+    %{$args->{op}} = (
         map { $_->name => $_ }
         grep { UNIVERSAL::can($_, "name") && exists $OP{$_->name} }
         (( map { "JSON::Patch::Operator::" . $_ } @CORE_OPS ), @{$args->{extra_operators}})
     );
 
-    bless $args => $class;
+    my $self = bless $args => $class;
+    $self->validate;
+    return $self;
+}
+
+sub validate {
+    my $self = shift;
+    my $pos = 0;
+    for my $operation (@{$self->{operations}}) {
+        $self->validate_operation($operation, $pos++);
+    }
+}
+
+sub validate_operation {
+    my ($self, $operation, $pos) = @_;
+
+    unless (ref $operation eq "HASH") {
+        JSON::Patch::Exception->throw(
+            code => ERROR_INVALID_OPERATION_TYPE,
+            message => "Invalid operation type",
+            path => "/$pos",
+        );
+    }
+
+    unless (exists $operation->{op}) {
+        JSON::Patch::Exception->throw(
+            code => ERROR_NOT_EXIST_OP_FIELD,
+            message => "Not exist op field",
+            path => "/$pos",
+        );
+    }
+
+    unless (exists $self->{op}{$operation->{op}}) {
+        JSON::Patch::Exception->throw(
+            code => ERROR_NOT_EXIST_OP_FIELD,
+            message => sprintf("Unsupported operator (%s)", $operation->{op}),
+            path => "/$pos/op",
+        );
+    }
+
+    my $operator = $self->{op}{$operation->{op}};
+    $operator->validate($operation, $pos);
+
+    return 1;
 }
 
 sub patch {
-    my ($self, $document, $operations) = @_;
-    my $ctx = +{
+    my ($self, $document) = @_;
+
+    my $ctx = JSON::Patch::Context->new(+{
         document => $document,
-        operations => $operations,
-        result => 1,
-    };
+    });
 
-    my $is_success = 1;
-
-    for my $operation (@$operations) {
-        my $operator = $OP{$operation->{op}};
-        $is_success = $operator->patch($ctx, $operation);
-        last unless $is_success;
+    my $pos = 0;
+    for my $operation (@{$self->{operations}}) {
+        my $operator = $self->{op}{$operation->{op}};
+        $operator->apply($ctx, $operation);
+        last unless $ctx->result;
+        $ctx->pos(++$pos);
     }
 
-    $ctx->{result} = $is_success;
     return $ctx;
 }
 

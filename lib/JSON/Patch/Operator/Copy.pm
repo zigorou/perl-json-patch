@@ -7,10 +7,15 @@ use parent qw(JSON::Patch::Operator);
 use JSON::Pointer;
 
 sub name { 'copy' }
-sub patch {
-    my ($class, $ctx, $args) = @_;
 
-    my $patched_document = JSON::Pointer->copy($ctx->{document}, $args->{from}, $args->{path});
+sub validate {
+    my ($class, $operation, $pos) = @_;
+}
+
+sub apply {
+    my ($class, $ctx, $operation) = @_;
+
+    my $patched_document = JSON::Pointer->copy($ctx->{document}, $operation->{from}, $operation->{path});
     $ctx->{document} = $patched_document;
 
     return 1;
