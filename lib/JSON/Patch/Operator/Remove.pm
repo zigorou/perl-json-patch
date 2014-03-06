@@ -32,6 +32,4 @@ sub apply {
     return 1;
 }
 
-
-
 1;
