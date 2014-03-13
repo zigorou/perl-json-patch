@@ -11,7 +11,7 @@ sub name { 'add' }
 
 sub validate {
     my ($class, $operation, $pos) = @_;
-    
+
     unless (exists $operation->{path}) {
         JSON::Patch::Exception->throw(
             code => ERROR_INVALID_OPERATION_FIELD,
